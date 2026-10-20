@@ -140,7 +140,7 @@ final class LogFileSink {
     static void writeRaw(String line) {
         Context ctx = context;
         if (line == null || ctx == null || !Config.enabled(ctx, Config.LOG_FILE)
-                || !Config.enabled(ctx, Config.LOG_RAW_BRIDGE) || !available()) return;
+                || !available()) return;
         WORKER.execute(() -> append(line));
     }
 

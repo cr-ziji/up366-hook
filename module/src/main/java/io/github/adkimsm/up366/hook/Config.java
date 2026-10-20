@@ -11,47 +11,27 @@ import java.util.Map;
  * {@code SharedPreferences} and are read and written only from inside the hooked target process
  * (the Hook code and the injected panel). No cross-process or exported surface is involved.
  *
- * <p>Reads are cheap but frequent (per WebView callback), so they are cached for a short window and
- * the cache is dropped whenever the panel writes a value through {@link #set}.
+ * <p>Reads are cheap but frequent, so they are cached for a short window and the cache is dropped
+ * whenever the panel writes a value through {@link #set}.
  */
 final class Config {
-    static final String ACTIVITY = "activity";
-    static final String NETWORK = "network";
-    static final String WEBVIEW = "webview";
-    static final String PROBE = "probe";
-    static final String BRIDGE = "bridge";
-    static final String QUESTION_METADATA = "question_metadata";
-    static final String ANSWER_INDEX = "answer_index";
-    static final String INJECT_UI = "inject_ui";
     static final String LOG_FILE = "log_file";
-    static final String LOG_RAW_BRIDGE = "log_raw_bridge";
-    static final String AUTO_FILL = "auto_fill";
-    static final String AUTO_ADVANCE = "auto_advance";
-    static final String SUBMIT_DISGUISE = "submit_disguise";
 
-    /** Int-valued preference (not a boolean toggle): index into {@link SpeedProfile#LEVELS}. */
-    static final String SPEED_PROFILE = "speed_profile";
+    static final String PROXY_ENABLED = "proxy_enabled";
+    static final String PROXY_HOST = "proxy_host";
+    static final String PROXY_PORT = "proxy_port";
+    static final String TRUST_ALL_CERTS = "trust_all_certs";
 
-    /** Int-valued preference: disguise target total in minutes, 0 = auto from the spoken audio. */
-    static final String DISGUISE_TARGET = "disguise_target";
+    static final String WEBVIEW_DEBUG_ENABLED = "webview_debug_enabled";
+    static final String WEBVIEW_DEBUG_PORT = "webview_debug_port";
 
-    /** Preset disguise totals in minutes; the panel cycles through them. */
-    static final int[] DISGUISE_TARGET_PRESETS = {0, 15, 20, 30};
-
-    /** Persistent UI preference (not a functional hook toggle) for the floating button. */
-    static final String HIDE_FLOATING = "hide_floating";
     static final String FLOAT_X = "float_x";
     static final String FLOAT_Y = "float_y";
 
-    /** Persistent UI preference: last selected injected-panel tab (clamped by the panel). */
-    static final String PANEL_TAB = "panel_tab";
-
     static final String PREFS = "p0_flags";
-    static final String TARGET_PACKAGE = "com.up366.mobile";
 
     static final String[] KEYS = {
-            ACTIVITY, NETWORK, WEBVIEW, PROBE, BRIDGE, QUESTION_METADATA, ANSWER_INDEX, INJECT_UI,
-            LOG_FILE, LOG_RAW_BRIDGE, AUTO_FILL, AUTO_ADVANCE, SUBMIT_DISGUISE
+            LOG_FILE, PROXY_ENABLED, TRUST_ALL_CERTS, WEBVIEW_DEBUG_ENABLED
     };
 
     private static final Object LOCK = new Object();
@@ -97,22 +77,95 @@ final class Config {
                 "status", "ok");
     }
 
-    static boolean get(Context context, String key) {
-        return enabled(context, key);
-    }
-
-    static boolean hideFloating(Context context) {
+    /** TEST ONLY: trust every certificate chain without importing a CA. */
+    static boolean trustAllCerts(Context context) {
         if (context == null) return false;
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getBoolean(HIDE_FLOATING, false);
+                .getBoolean(TRUST_ALL_CERTS, false);
     }
 
-    static void setHideFloating(Context context, boolean hidden) {
+    static void setTrustAllCerts(Context context, boolean value) {
         if (context == null) return;
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putBoolean(HIDE_FLOATING, hidden).apply();
-        LogSink.event("config_updated", "key", HIDE_FLOATING, "value", Boolean.toString(hidden),
+                .edit().putBoolean(TRUST_ALL_CERTS, value).apply();
+        invalidate();
+        LogSink.event("config_updated", "key", TRUST_ALL_CERTS, "value", Boolean.toString(value),
                 "status", "ok");
+    }
+
+    // Proxy
+    static boolean proxyEnabled(Context context) {
+        if (context == null) return false;
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getBoolean(PROXY_ENABLED, false);
+    }
+
+    static void setProxyEnabled(Context context, boolean value) {
+        if (context == null) return;
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putBoolean(PROXY_ENABLED, value).apply();
+        invalidate();
+        LogSink.event("config_updated", "key", PROXY_ENABLED, "value", Boolean.toString(value),
+                "status", "ok");
+    }
+
+    static String proxyHost(Context context) {
+        if (context == null) return "";
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(PROXY_HOST, "");
+    }
+
+    static void setProxyHost(Context context, String value) {
+        if (context == null) return;
+        String v = value == null ? "" : value.trim();
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putString(PROXY_HOST, v).apply();
+        invalidate();
+        LogSink.event("config_updated", "key", PROXY_HOST, "status", "ok");
+    }
+
+    static int proxyPort(Context context) {
+        if (context == null) return 0;
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getInt(PROXY_PORT, 0);
+    }
+
+    static void setProxyPort(Context context, int value) {
+        if (context == null) return;
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putInt(PROXY_PORT, value).apply();
+        invalidate();
+        LogSink.event("config_updated", "key", PROXY_PORT, "status", "ok");
+    }
+
+    // WebView debug
+    static boolean webviewDebugEnabled(Context context) {
+        if (context == null) return false;
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getBoolean(WEBVIEW_DEBUG_ENABLED, false);
+    }
+
+    static void setWebviewDebugEnabled(Context context, boolean value) {
+        if (context == null) return;
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putBoolean(WEBVIEW_DEBUG_ENABLED, value).apply();
+        invalidate();
+        LogSink.event("config_updated", "key", WEBVIEW_DEBUG_ENABLED, "value", Boolean.toString(value),
+                "status", "ok");
+    }
+
+    static int webviewDebugPort(Context context) {
+        if (context == null) return 9222;
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getInt(WEBVIEW_DEBUG_PORT, 9222);
+    }
+
+    static void setWebviewDebugPort(Context context, int value) {
+        if (context == null) return;
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putInt(WEBVIEW_DEBUG_PORT, value).apply();
+        invalidate();
+        LogSink.event("config_updated", "key", WEBVIEW_DEBUG_PORT, "status", "ok");
     }
 
     /** Saved floating-button x offset in px, or {@code fallback} when never dragged. */
@@ -136,78 +189,8 @@ final class Config {
         LogSink.event("config_updated", "key", "float_position", "status", "ok");
     }
 
-    /** Last selected panel tab; 0 (答案) when never chosen. The panel clamps the range. */
-    static int panelTab(Context context) {
-        if (context == null) return 0;
-        try {
-            return Math.max(0, context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                    .getInt(PANEL_TAB, 0));
-        } catch (Throwable ignored) {
-            return 0;
-        }
-    }
-
-    static void setPanelTab(Context context, int index) {
-        if (context == null || index < 0) return;
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putInt(PANEL_TAB, index).apply();
-    }
-
     static boolean defaultValue(String key) {
-        return ACTIVITY.equals(key) || INJECT_UI.equals(key) || SUBMIT_DISGUISE.equals(key);
-    }
-
-    /** Selected disguise target in minutes; 0 means auto-computed from the parsed package. */
-    static int disguiseTarget(Context context) {
-        if (context == null) return 0;
-        try {
-            int value = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                    .getInt(DISGUISE_TARGET, 0);
-            return Math.max(0, Math.min(120, value));
-        } catch (Throwable ignored) {
-            return 0;
-        }
-    }
-
-    static long disguiseTargetMs(Context context) {
-        return disguiseTarget(context) * 60_000L;
-    }
-
-    static void setDisguiseTarget(Context context, int minutes) {
-        if (context == null) return;
-        int safe = Math.max(0, Math.min(120, minutes));
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putInt(DISGUISE_TARGET, safe).apply();
-        LogSink.event("config_updated", "key", DISGUISE_TARGET, "value", Integer.toString(safe),
-                "status", "ok");
-    }
-
-    /** Next preset after {@code current}, wrapping around. */
-    static int nextDisguiseTarget(int current) {
-        for (int preset : DISGUISE_TARGET_PRESETS) {
-            if (preset > current) return preset;
-        }
-        return DISGUISE_TARGET_PRESETS[0];
-    }
-
-    /** Selected speed profile index; falls back to the packaged default. */
-    static int speedProfile(Context context) {
-        if (context == null) return SpeedProfile.DEFAULT_INDEX;
-        try {
-            return SpeedProfile.clampIndex(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                    .getInt(SPEED_PROFILE, SpeedProfile.DEFAULT_INDEX));
-        } catch (Throwable ignored) {
-            return SpeedProfile.DEFAULT_INDEX;
-        }
-    }
-
-    static void setSpeedProfile(Context context, int index) {
-        if (context == null) return;
-        int safe = SpeedProfile.clampIndex(index);
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putInt(SPEED_PROFILE, safe).apply();
-        LogSink.event("config_updated", "key", SPEED_PROFILE, "value", Integer.toString(safe),
-                "status", "ok");
+        return false;
     }
 
     static boolean isKnownKey(String key) {
@@ -215,12 +198,6 @@ final class Config {
             if (candidate.equals(key)) return true;
         }
         return false;
-    }
-
-    static Map<String, Boolean> all(Context context) {
-        Map<String, Boolean> values = new LinkedHashMap<>();
-        for (String key : KEYS) values.put(key, get(context, key));
-        return values;
     }
 
     private static Map<String, Boolean> read(Context context) {

@@ -7,9 +7,9 @@ import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedHelpers;
 
 /**
- * Hooks the target Activity lifecycle and attaches the read-only panel as a sibling View on the
- * DecorView. Injection is best-effort: any failure is caught, never propagates into the target app,
- * and repeated failures trip a circuit breaker that stops further attempts.
+ * Hooks the target Activity lifecycle and attaches the panel as a sibling View on the DecorView.
+ * Injection is best-effort: any failure is caught, never propagates into the target app, and
+ * repeated failures trip a circuit breaker that stops further attempts.
  *
  * <p>Resume/pause are hooked through {@link Instrumentation} so they fire even when the app's
  * Activity overrides the lifecycle method without calling {@code super}; destroy is hooked on
@@ -66,19 +66,15 @@ final class UiInjector {
     private static void attach(Activity activity) {
         if (disabled || activity == null) return;
         try {
-            if (!Config.enabled(activity, Config.INJECT_UI)) return;
             if (activity.isFinishing()) return;
             if (InjectedUi.show(activity)) {
                 failures = 0;
-                LogSink.diagnostic("ui_injected", "", "", "ok", "", 0,
-                        "activity", activity.getClass().getName());
+                LogSink.event("ui_injected", "activity", activity.getClass().getName(), "status", "ok");
             }
         } catch (Throwable error) {
             failures++;
-            LogSink.diagnostic("ui_injection_failed", "", "", "failed",
-                    error.getClass().getSimpleName(), 0,
-                    "activity", activity.getClass().getName(),
-                    "failures", Integer.toString(failures));
+            LogSink.event("ui_injection_failed", "activity", activity.getClass().getName(),
+                    "failures", Integer.toString(failures), "status", "failed");
             LogSink.error("inject_ui", error);
             if (failures >= MAX_CONSECUTIVE_FAILURES) {
                 disabled = true;

@@ -10,7 +10,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
-import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
@@ -80,15 +79,24 @@ public final class A366Module implements IXposedHookLoadPackage {
         try {
             LogFileSink.init(context);
             LogFileSink.announce();
-            RuntimeClassObserver.install(classLoader);
-            ActivityRecorder.install();
             UiInjector.install();
             OkHttpRecorder.setContext(context);
-            QuestionPackageRecorder.install(context);
-            WebViewRecorder.install(context, classLoader);
+            applyPersistedNetworkOptions(context);
+            WebViewRecorder.install(context);
             OkHttpRecorder.install(classLoader);
         } catch (Throwable error) {
             LogSink.error("install_hooks", error);
+        }
+    }
+
+    /** Re-applies a proxy that was enabled in a previous run, before the app builds its clients. */
+    private static void applyPersistedNetworkOptions(Context context) {
+        try {
+            if (Config.proxyEnabled(context)) {
+                ProxyHelper.apply(true, Config.proxyHost(context), Config.proxyPort(context));
+            }
+        } catch (Throwable error) {
+            LogSink.error("apply_persisted_network", error);
         }
     }
 
