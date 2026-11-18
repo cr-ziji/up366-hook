@@ -203,12 +203,14 @@ final class InjectedUi {
         TextView status;
         TextView logStatus;
         TextView webviewStatus;
+        TextView webviewProxyStatus;
 
         CheckBox proxyEnabled;
         EditText proxyHost;
         EditText proxyPort;
 
         CheckBox trustAll;
+        CheckBox noTimeout;
 
         CheckBox webviewDebug;
 
@@ -387,7 +389,7 @@ final class InjectedUi {
 
             // ---------------------------------------------------------- proxy
             content.addView(caption(context, "应用全局代理"));
-            proxyEnabled = checkBox(context, "启用代理（当前进程）", Config.proxyEnabled(context));
+            proxyEnabled = checkBox(context, "启用代理（应用内所有进程）", Config.proxyEnabled(context));
             proxyEnabled.setOnCheckedChangeListener((view, checked) -> applyProxySettings());
             content.addView(proxyEnabled);
 
@@ -409,20 +411,41 @@ final class InjectedUi {
             applyProxy.setOnClickListener(view -> applyProxySettings());
             content.addView(applyProxy, fullWidth(context));
 
+            webviewProxyStatus = text(context, 11, palette.secondaryText, "");
+            content.addView(webviewProxyStatus);
+
             content.addView(caption(context, "HTTPS 抓包"));
             trustAll = checkBox(context, "信任全部证书（跳过校验，仅用于抓包测试）",
                     Config.trustAllCerts(context));
             trustAll.setOnCheckedChangeListener((view, checked) -> {
-                Config.setTrustAllCerts(activity, checked);
+                TrustAllCerts.setEnabled(activity, checked);
                 Toast.makeText(activity, checked
-                                ? "已开启：所有证书放行，新建连接后生效"
+                                ? "已开启：所有证书放行；已创建的网络客户端需重启应用"
                                 : "已关闭：恢复系统证书校验",
                         Toast.LENGTH_SHORT).show();
             });
             content.addView(trustAll);
 
             content.addView(text(context, 11, palette.secondaryText,
-                    "代理仅作用于本应用进程；已创建的连接需要重启应用后才会走新代理。"));
+                    "开启后立即作用于应用内所有进程的 OkHttp、HttpURLConnection（含个推/联通/卓望等推送与登录 SDK）"
+                            + "以及系统 WebView（含百舸争流等网页）；已打开的 WebView 页面需刷新或重新进入才会走新代理。"
+                            + "系统浏览器和第三方 App 不受影响。"));
+
+            // ---------------------------------------------------------- download
+            content.addView(caption(context, "大文件下载"));
+            noTimeout = checkBox(context, "下载不超时（慢速下载保护）",
+                    Config.enabled(context, Config.NO_NETWORK_TIMEOUT));
+            noTimeout.setOnCheckedChangeListener((view, checked) -> {
+                Config.set(activity, Config.NO_NETWORK_TIMEOUT, checked);
+                Toast.makeText(activity, checked
+                                ? "已开启：下载类请求不再因慢速网络中断"
+                                : "已关闭：使用应用默认超时",
+                        Toast.LENGTH_SHORT).show();
+            });
+            content.addView(noTimeout);
+            content.addView(text(context, 11, palette.secondaryText,
+                    "仅对应用内的文件下载通道生效：下载连接最多等 3 分钟，开始传输后 10 分钟收不到任何数据才判定断线；"
+                            + "慢速但持续的下载不会被打断。其他请求仍按应用默认超时处理。"));
 
             // ---------------------------------------------------------- webview
             content.addView(caption(context, "WebView 调试"));
@@ -473,8 +496,8 @@ final class InjectedUi {
         // ------------------------------------------------------------------ proxy
 
         private void applyProxySettings() {
-            String host = value(proxyHost);
-            String portText = value(proxyPort);
+            String host = value(proxyHost).trim();
+            String portText = value(proxyPort).trim();
             int port = 0;
             if (!portText.isEmpty()) {
                 try {
@@ -483,6 +506,26 @@ final class InjectedUi {
                     port = 0;
                 }
             }
+            // Accept what people paste from a proxy tool: "http://127.0.0.1:7897/",
+            // "127.0.0.1:7897" or a bare host. The :port part wins over the port field.
+            if (host.contains("://")) host = host.substring(host.indexOf("://") + 3);
+            int slash = host.indexOf('/');
+            if (slash >= 0) host = host.substring(0, slash);
+            if (!host.isEmpty() && host.charAt(0) != '[') {
+                int colon = host.lastIndexOf(':');
+                if (colon > 0) {
+                    String tail = host.substring(colon + 1);
+                    if (tail.matches("\\d{1,5}")) {
+                        int embedded = Integer.parseInt(tail);
+                        if (embedded > 0 && embedded <= 65535) {
+                            port = embedded;
+                            host = host.substring(0, colon);
+                        }
+                    }
+                }
+            }
+            if (!host.isEmpty()) proxyHost.setText(host);
+            if (port > 0) proxyPort.setText(Integer.toString(port));
             boolean enabled = proxyEnabled.isChecked();
             if (enabled && (host.isEmpty() || port <= 0 || port > 65535)) {
                 Toast.makeText(activity, "请填写有效的代理主机与端口（1-65535）",
@@ -493,11 +536,15 @@ final class InjectedUi {
             Config.setProxyHost(activity, host);
             Config.setProxyPort(activity, port);
             Config.setProxyEnabled(activity, enabled);
-            boolean applied = ProxyHelper.apply(enabled, host, port);
+            boolean applied = ProxyHelper.apply(enabled, host, port, true);
             Toast.makeText(activity,
-                    enabled ? (applied ? "代理已应用：" + host + ":" + port : "代理应用失败，请查看日志")
-                            : "代理已关闭",
+                    enabled
+                            ? (applied
+                                    ? "代理已应用：" + host + ":" + port + "（新请求立即生效）"
+                                    : "代理应用失败，请查看日志")
+                            : "代理已关闭（新请求立即直连）",
                     Toast.LENGTH_SHORT).show();
+            updateWebviewProxyStatusLater();
         }
 
         // ------------------------------------------------------------------ webview
@@ -544,7 +591,20 @@ final class InjectedUi {
                 if (port > 0) proxyPort.setText(Integer.toString(port));
             }
             updateWebviewStatus();
+            updateWebviewProxyStatus();
             updateLogStatus();
+        }
+
+        private void updateWebviewProxyStatus() {
+            if (webviewProxyStatus == null) return;
+            webviewProxyStatus.setText("WebView 代理：" + WebViewProxy.statusText());
+        }
+
+        /** The WebView push is posted to the main thread, so refresh again after it had a chance. */
+        private void updateWebviewProxyStatusLater() {
+            updateWebviewProxyStatus();
+            if (webviewProxyStatus == null) return;
+            webviewProxyStatus.postDelayed(this::updateWebviewProxyStatus, 2_500L);
         }
 
         // ------------------------------------------------------------------ widgets

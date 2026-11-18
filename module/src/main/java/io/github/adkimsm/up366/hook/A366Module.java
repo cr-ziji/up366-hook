@@ -23,6 +23,7 @@ public final class A366Module implements IXposedHookLoadPackage {
 
         LogSink.init(lpparam.classLoader);
         LogSink.setProcessRole("target_hook");
+        WebViewProxy.setProcessName(lpparam.processName);
         LogSink.event("module_loaded", "package", lpparam.packageName, "process", lpparam.processName);
         hookApplicationAttach(lpparam.classLoader);
         hookApplicationCreate(lpparam.classLoader);
@@ -76,27 +77,29 @@ public final class A366Module implements IXposedHookLoadPackage {
     private static void install(Object application, Context context, ClassLoader classLoader, String source) {
         if (!INSTALLED.compareAndSet(false, true)) return;
         LogSink.event("context_initialized", "source", source, "package", context.getPackageName());
-        try {
+        step("log_sink", () -> {
             LogFileSink.init(context);
             LogFileSink.announce();
-            UiInjector.install();
-            OkHttpRecorder.setContext(context);
-            applyPersistedNetworkOptions(context);
-            WebViewRecorder.install(context);
-            OkHttpRecorder.install(classLoader);
-        } catch (Throwable error) {
-            LogSink.error("install_hooks", error);
-        }
+        });
+        // Each stage is isolated: one failing hook group must not prevent the download/proxy
+        // hooks from being installed.
+        step("ui_injector", () -> UiInjector.install());
+        step("okhttp_context", () -> OkHttpRecorder.setContext(context));
+        // WebViewProxy must be installed before ProxyHelper: ProxyHelper.apply() forwards the
+        // state to WebViewProxy, which needs its WebView hooks and class loader in place.
+        step("webview_proxy", () -> WebViewProxy.install(context, classLoader));
+        step("proxy_selector", () -> ProxyHelper.install(context, classLoader));
+        step("okhttp_proxy", () -> OkHttpRecorder.install(classLoader));
+        step("trust_all_certs", () -> TrustAllCerts.install(context, classLoader));
+        step("network_timeout", () -> NetworkTimeout.install(context, classLoader));
+        step("webview_debug", () -> WebViewRecorder.install(context, classLoader));
     }
 
-    /** Re-applies a proxy that was enabled in a previous run, before the app builds its clients. */
-    private static void applyPersistedNetworkOptions(Context context) {
+    private static void step(String name, Runnable action) {
         try {
-            if (Config.proxyEnabled(context)) {
-                ProxyHelper.apply(true, Config.proxyHost(context), Config.proxyPort(context));
-            }
+            action.run();
         } catch (Throwable error) {
-            LogSink.error("apply_persisted_network", error);
+            LogSink.error("install_" + name, error);
         }
     }
 

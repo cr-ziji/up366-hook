@@ -29,7 +29,7 @@ final class UiInjector {
         hookActivity("onDestroy", false);
     }
 
-    private static void hookInstrumentation(String method, boolean attach) {
+    private static void hookInstrumentation(String method, final boolean attach) {
         try {
             XposedHelpers.findAndHookMethod(Instrumentation.class, method, Activity.class,
                     new XC_MethodHook() {
@@ -59,8 +59,20 @@ final class UiInjector {
     }
 
     private static void handle(Activity activity, boolean attach) {
-        if (attach) attach(activity);
-        else detach(activity);
+        if (attach) {
+            // A resumed Activity is the first moment Chromium is definitely idle enough to accept
+            // a proxy override, so re-assert it (bounded) for the WebView pages that follow.
+            if (activity != null) {
+                try {
+                    WebViewProxy.onForegroundActivity();
+                } catch (Throwable error) {
+                    LogSink.error("webview_proxy_resume", error);
+                }
+            }
+            attach(activity);
+        } else {
+            detach(activity);
+        }
     }
 
     private static void attach(Activity activity) {

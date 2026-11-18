@@ -21,6 +21,7 @@ final class Config {
     static final String PROXY_HOST = "proxy_host";
     static final String PROXY_PORT = "proxy_port";
     static final String TRUST_ALL_CERTS = "trust_all_certs";
+    static final String NO_NETWORK_TIMEOUT = "no_network_timeout";
 
     static final String WEBVIEW_DEBUG_ENABLED = "webview_debug_enabled";
     static final String WEBVIEW_DEBUG_PORT = "webview_debug_port";
@@ -31,7 +32,7 @@ final class Config {
     static final String PREFS = "p0_flags";
 
     static final String[] KEYS = {
-            LOG_FILE, PROXY_ENABLED, TRUST_ALL_CERTS, WEBVIEW_DEBUG_ENABLED
+            LOG_FILE, PROXY_ENABLED, TRUST_ALL_CERTS, NO_NETWORK_TIMEOUT, WEBVIEW_DEBUG_ENABLED
     };
 
     private static final Object LOCK = new Object();
@@ -190,7 +191,8 @@ final class Config {
     }
 
     static boolean defaultValue(String key) {
-        return false;
+        // Large resource packages over a slow link should wait instead of timing out by default.
+        return NO_NETWORK_TIMEOUT.equals(key);
     }
 
     static boolean isKnownKey(String key) {
